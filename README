@@ -1,0 +1,5 @@
+REVERSE GEOCODING PROXY SERVER
+
+Will work with different reverse geocoding servers.
+Main target for now is google reverse geocoding service, Nominatim, and some noname service 
+(For now know only its request/response signature)
