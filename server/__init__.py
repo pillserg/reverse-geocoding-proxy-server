@@ -59,7 +59,32 @@ class GeoServer(Resource):
             request.setResponseCode(503)
             return ERROR_503_MSG
         return template.format(VERSION=VERSION)
+    
 
+class BaseReverseGeocoder(Resource):
+
+    def _parse_request(self):
+        pass
+
+    def send_response(self, respone, request):
+        request.write(response)
+        request.finish()
+
+    def render_GET(self, request):
+        data = self._parse_request()
+        
+        return NOT_DONE_YET
+
+class MonServEmulator(Resource):
+    pass
+
+
+class GoogleReverseGeocoder(BaseReverseGeocoder):
+    pass
+
+
+class Nominatim(BaseReverseGeocoder):
+    pass
 
 def main():
     from twisted.internet import reactor
