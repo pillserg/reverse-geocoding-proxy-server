@@ -1,0 +1,2 @@
+class MalformedDataError(Exception):
+    pass

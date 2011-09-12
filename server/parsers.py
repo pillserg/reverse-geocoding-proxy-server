@@ -1,6 +1,20 @@
 # -*- coding: utf-8 -*-
 
 from xml.dom import minidom
+import cgi
+from errors import *
+
+
+def parse_generic_request(request):
+    print request.args
+    try:
+        lat = cgi.escape(request.args['lat'][0])
+        lng = cgi.escape(request.args['lng'][0])
+    except:
+        print 'error parsing lat lng'
+        raise MalformedDataError('error parsing lat lng')
+    return lat, lng
+
 
 def parse_request_to_monitorserver(request):
     """
@@ -20,17 +34,20 @@ def parse_request_to_monitorserver(request):
 
         return lat, lng
 
+
 def parse_monitor_server_response(xml_data):
         try:
             xml_data = minidom.parseString(data)
             latlng = xml_data.getElementsByTagName('latlng')[0].firstChild.data
             lat, lng = map(float, latlng.split(', '))
         except Exception, err:
-            #raise MalformedDataError(err)
-            raise
+            raise MalformedDataError(err)
 
         return lat, lng
 
+
+def parse_generic(request):
+    pass
 
 
 # monitorserver: 

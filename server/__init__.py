@@ -9,7 +9,8 @@ from twisted.internet.defer import Deferred as D
 from twisted.web.server import NOT_DONE_YET, Site
 from twisted.web.resource import Resource
 from parsers import parse_request_to_monitorserver
-from client import get_xml_from_monitor_server
+from client import get_xml_from_monitor_server, get_json_from_nominatim
+from errors import *
 
 TEMPLATE_DIR = '../templates'
 ERROR_503_MSG = '<h1>503</h1> something bad happend... contact administration please'
@@ -24,9 +25,6 @@ class NoTemplateError(Exception):
     def __init__(self, path, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
         self.message = 'could not open template "{}"'.format(path)
-
-class MalformedDataError(Exception):
-    pass
 
 
 def load_template(filename):
@@ -121,9 +119,21 @@ class MonServEmulator(Resource):
         print 'OK in {}'.format(time.time() - start_time)
         return NOT_DONE_YET
 
+
+class Nominatim(Resource):
+    def render_GET(self, request):
+        print 'incoming: {}'.format(request)
+        d = get_json_from_nominatim(request)
+        def cb(resp):
+            print 'DONE'
+        d.addCallback(cb)
+        return NOT_DONE_YET
+
+
 def main():
     from twisted.internet import reactor
     root = GeoServer()
+    root.putChild('nominatim', Nominatim())
     root.putChild('cgi-bin', CGI_bin_emul())
     http_factory = Site(root)
     reactor.listenTCP(HTTP_PORT, http_factory)
