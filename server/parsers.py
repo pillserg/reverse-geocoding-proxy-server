@@ -173,7 +173,64 @@ class NominatimResponse(GenericGeocodingResult):
         return self.address_str
 
 
+class MonServerResponse(GenericGeocodingResult):
 
+    def make_args_for_agent(self):
+        user_agent_mimic = self.request.requestHeaders.getRawHeaders('User-Agent')
+        if user_agent_mimic:
+            user_agent_mimic = user_agent_mimic[0]
+        else:
+            user_agent_mimic = ''
+        method = 'GET'
+        url = self._make_url_for_nominatim()
+        headers = Headers({'Connection': ['Keep-Alive'],
+                           'Proxy-Connection': ['Keep-Alive'],
+                           'User-Agent': [user_agent_mimic]
+                           })
+        body = None
+
+        return [method, url, headers, body]
+
+    def cb_process_response(self, response):
+        def cb_request_finished(response_data):
+            """data would be sent to recepient immedeatly
+            so encode it"""
+            resp = self.parse_response(response_data).encode('utf-8')
+            if self.format == 'json':
+                resp = simplejson.dumps({'address': resp})
+            self.finished.callback(resp)
+
+        def eb_request_failed(reason):
+            raise
+
+        d = Deferred()
+        d.addCallback(cb_request_finished)
+        d.addErrback(eb_request_failed)
+        response.deliverBody(BodyReceiver(d))
+        return d
+
+    def get_agent(self):
+        from twisted.internet import reactor
+        agent = Agent(reactor)
+        args = self.make_args_for_agent()
+        d = agent.request(*args)
+        d.addCallback(self.cb_process_response)
+        return self.finished
+
+    def get_address(self):
+        return self.get_agent()
+
+
+    def parse_response(self, data):
+        if self.format == 'json':
+            try:
+                json = simplejson.loads(data.decode('utf-8'))
+            except:
+                raise
+            self.address_str = json['display_name']
+        else:
+            raise NotImplementedError('xml parsing from Nominatim not implemented')
+        return self.address_str
 
 class GenericGeocodingRequest(object):
     """
@@ -185,6 +242,7 @@ class GenericGeocodingRequest(object):
         self.lat = None
         self.lon = None
         self.format = format
+        self.raw_data = request.content.read()
         self._parse_request(request)
 
     def get_format(self):
@@ -213,7 +271,7 @@ class MonitorServerGeocodingRequest(GenericGeocodingRequest):
         """
         if self.processed:
             raise AlreadyParsedError('I can be called only once')
-        data = request.content.read()
+        data = self.raw_data
         if data:
             try:
                 xml_data = minidom.parseString(data)

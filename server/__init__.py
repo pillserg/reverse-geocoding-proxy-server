@@ -16,7 +16,6 @@ from parsers import GenericGeocodingResult
 from parsers import NominatimResponse
 from parsers import MONSERV, NOMINATIM, GOOGLECODER
 
-from client import get_xml_from_monitor_server, get_json_from_nominatim
 from errors import *
 
 TEMPLATE_DIR = '../templates'
