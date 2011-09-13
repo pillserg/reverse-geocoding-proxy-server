@@ -4,7 +4,6 @@ from pprint import pformat
 import cgi
 from zope.interface import implements
 from urllib import urlencode
-from parsers import parse_generic_request
 import twisted
 from twisted.internet.defer import succeed, fail
 from twisted.web.iweb import IBodyProducer
@@ -12,6 +11,15 @@ from twisted.web.client import Agent, ResponseDone
 from twisted.web.http_headers import Headers
 from twisted.internet.defer import Deferred
 from twisted.internet.protocol import Protocol
+
+
+#from parsers import parse_request_to_monitorserver
+#from parsers import parse_generic_request
+from parsers import GenericGeocodingRequest
+from parsers import GenericGeocodingResult
+from parsers import NominatimResponse
+from parsers import MONSERV, NOMINATIM, GOOGLECODER
+
 
 from errors import *
 
@@ -118,12 +126,13 @@ def latlng_to_nominatem_request_url(lat, lng, format='json',
                                     zoom=18, addressdetails=1,
                                     accept_language='UA'):
     base_nominatim_url = 'http://nominatim.openstreetmap.org/reverse'
-    req = base_nominatim_url + urlencode({'lat': lat,
+    req = '?'.join((base_nominatim_url, urlencode({'lat': lat,
                                           'lon': lng,
                                           'format': format,
                                           'zoom': 18,
                                           'addressdetails': addressdetails,
                                           'accept-language': accept_language})
+                    ))
     return req
 
 
@@ -131,46 +140,43 @@ def latlng_to_nominatem_request_url(lat, lng, format='json',
 
 def get_json_from_nominatim(request, url='http://nominatim.openstreetmap.org/reverse'):
     from twisted.internet import reactor
-    agent = Agent(reactor)
-    try:
-        lat, lng = parse_generic_request(request)
-    except MalformedDataError, err:
-        return fail(err)
-    url = latlng_to_nominatem_request_url(lat, lng)
-    d = agent.request(*request_inst_to_agent_request_list(request, url))
+
+    geo_req = GenericGeocodingRequest(request, server=NOMINATIM)
+    deferred_response = NominatimResponse(geo_req)
+    d = deferred_response
+
+    def PARSE(a):
+        return a
 
     def callback_request(response):
         print 'Response version:', response.version
         print 'Response code:', response.code
         print 'Response phrase:', response.phrase
 
-        def cbRequestFinished(response_data, response, request):
-            for header, value in response.headers.getAllRawHeaders():
-                request.setHeader(header, value[0])
-            request.write(response_data)
-            request.finish()
+        def cbRequestFinished(response_data, deferred):
+            latlng = PARSE(response_data)
+            deferred.callback(response_data)
 
-        def ebRequestFailed(reason, response, request):
-            print 'request failed - {}'.format(reason.getErrorMessage())
-            request.setResponseCode('500')
-            request.write('Data Retrival Failed')
+        def ebRequestFailed(reason, deferred):
+            deferred.errback('Data retrival failure')
 
         finished = Deferred()
         finished.addCallback(cbRequestFinished, response, request)
         finished.addErrback(ebRequestFailed, response, request)
-        response.deliverBody(MonServBodyReceiver(finished))
+        response.deliverBody(BodyReceiver(finished))
         return finished
 
     def errback_request(err, request):
         print 'request failed - {}'.format(err.getErrorMessage())
-        request.setResponseCode('500')
+        request.setResponseCode(500)
         request.write('Data Retrival Failed')
 
-    d.addCallback(callback_request)
-    d.addErrback(errback_request, request)
+    d.addCallback(callback_request, d)
+    d.addErrback(errback_request, d)
 
     def errback(err):
         print 'Err'
         raise err
     d.addErrback(errback)
-    #    ?format=xml&lat=52.5487429714954&lon=-1.81602098644987&zoom=18&addressdetails=1
+
+    return d

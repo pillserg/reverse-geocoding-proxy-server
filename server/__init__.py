@@ -6,9 +6,15 @@ import sys
 import time
 
 from twisted.internet.defer import Deferred as D
+from twisted.internet.defer import CancelledError
 from twisted.web.server import NOT_DONE_YET, Site
 from twisted.web.resource import Resource
-from parsers import parse_request_to_monitorserver
+
+from parsers import GenericGeocodingRequest
+from parsers import GenericGeocodingResult
+from parsers import NominatimResponse
+from parsers import MONSERV, NOMINATIM, GOOGLECODER
+
 from client import get_xml_from_monitor_server, get_json_from_nominatim
 from errors import *
 
@@ -77,23 +83,6 @@ class GeoServer(Resource):
         return 'No Post'
 
 
-class BaseReverseGeocoder(Resource):
-    """
-        Base class for reverse geocoding requests
-        gets data, parses it and sends to server
-        returns server answer to client
-    """
-
-    def send_response(self, respone, request):
-        request.write(response)
-        request.finish()
-
-    def render_GET(self, request):
-        data = self._parse_request()
-
-        return NOT_DONE_YET
-
-
 class CGI_bin_emul(Resource):
     def getChild(self, path, request):
         if path == 'geocoder':
@@ -109,14 +98,14 @@ class MonServEmulator(Resource):
 
     def render_POST(self, request):
         start_time = time.time()
-        print request.method
-        print '<<< {}... '.format(request)
+        #print request.method
+        #print '<<< {}... '.format(request)
         #lat, lng = parse_request_to_monitorserver(request)
-        d = get_xml_from_monitor_server(request)
-        def cc(resp):
-            print 'Done'
-        d.addCallback(cc)
-        print 'OK in {}'.format(time.time() - start_time)
+        #d = get_xml_from_monitor_server(request)
+        #def cc(resp):
+        #    print 'Done'
+        #d.addCallback(cc)
+        #print 'OK in {}'.format(time.time() - start_time)
         return NOT_DONE_YET
 
 
@@ -130,11 +119,44 @@ class Nominatim(Resource):
         return NOT_DONE_YET
 
 
+class MonServToNominatem(Resource):
+    def render_GET(self, request):
+        return 'Not implemented'
+#        print 'incoming: {}'.format(request)
+#        req = GenericGeocodingRequest(request, format='json', server=MONSERV)
+#
+#        d = get_json_from_nominatim(request)
+#
+#        def cb(resp, request):
+#            request.write(resp)
+#            request.finish()
+#            print 'DONE'
+#
+#        d.addCallback(cb, request)
+#        return NOT_DONE_YET
+
+
+class GenericToNominatim(Resource):
+    def render_GET(self, request):
+        geocoder_request = GenericGeocodingRequest(request)
+        d = NominatimResponse(geocoder_request).get_agent()
+
+        def cb_data_received_from_geoserver(latlng, request):
+            #print latlng
+            request.write(latlng.encode('utf-8'))
+            request.finish()
+
+        d.addCallback(cb_data_received_from_geoserver, request)
+        d.addErrback(lambda err: err.trap(CancelledError))
+        request.notifyFinish().addErrback(lambda _, d: d.cancel(), d)
+        return NOT_DONE_YET
+
 def main():
     from twisted.internet import reactor
     root = GeoServer()
     root.putChild('nominatim', Nominatim())
     root.putChild('cgi-bin', CGI_bin_emul())
+    root.putChild('geocoder', GenericToNominatim())
     http_factory = Site(root)
     reactor.listenTCP(HTTP_PORT, http_factory)
     print 'RGS v {} is listening on {} port'.format(VERSION, HTTP_PORT)
