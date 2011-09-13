@@ -84,14 +84,6 @@ class GeoServer(Resource):
         return 'No Post'
 
 
-class CGI_bin_emul(Resource):
-    def getChild(self, path, request):
-        if path == 'geocoder':
-            return MonServEmulator()
-        else:
-            return PageNotFound404()
-
-
 class MonServEmulator(Resource):
 
     def render_GET(self, request):
@@ -120,6 +112,15 @@ class Nominatim(Resource):
         return NOT_DONE_YET
 
 
+class CGI_bin_emul(Resource):
+    """Havent fully grok Twisted url dispather thus this little spike"""
+    def getChild(self, path, request):
+        if path == 'geocoder':
+            return MonServerTransparent()
+        else:
+            return PageNotFound404()
+
+
 class MonServToNominatem(Resource):
     def render_GET(self, request):
         return 'Not implemented'
@@ -136,10 +137,20 @@ class MonServToNominatem(Resource):
 #        d.addCallback(cb, request)
 #        return NOT_DONE_YET
 
+class MonServerTransparent(Resource):
+    def render_GET(self, request):
+        return 'Not implemented'
+
 
 class GenericToNominatim(Resource):
-    def render_GET(self, request):
 
+    def print_request(self, request):
+        print '{}: {} > {} ...'.format(time.time(), request.getClientIP(),
+                                       request.__repr__()),
+
+    def print_end_time(self, start_time):
+        print 'OK: {} s'.format(time.time() - start_time)
+    def render_GET(self, request):
         def cb_data_received_from_geoserver(response, request):
             request.setHeader('Content-type', 'application/json; charset=UTF-8')
             request.write(response)
@@ -151,7 +162,7 @@ class GenericToNominatim(Resource):
             request.finish()
 
         def finish_request(_, request, start_time):
-            print 'OK: {} s'.format(time.time() - start_time)
+            self.print_end_time(start_time)
 
         try:
             geocoder_request = GenericGeocodingRequest(request)
@@ -160,7 +171,7 @@ class GenericToNominatim(Resource):
             return '{"failure": "bad params"}'
 
         req_start_time = time.time()
-        print '{} > {} ...'.format(request.getClientIP(), request.__repr__()),
+        self.print_request(request)
 
         d = NominatimResponse(geocoder_request).get_agent()
         d.addCallback(cb_data_received_from_geoserver, request)
@@ -169,6 +180,8 @@ class GenericToNominatim(Resource):
         d.addBoth(finish_request, request, req_start_time)
         request.notifyFinish().addErrback(lambda _, d: d.cancel(), d)
         return NOT_DONE_YET
+
+
 
 def main():
     from twisted.internet import reactor
