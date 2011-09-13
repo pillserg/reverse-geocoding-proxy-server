@@ -58,27 +58,21 @@ class BodyReceiver(Protocol):
             data = bytes[:self.remaining]
             self.remaining -= len(data)
             self.full_data.append(data)
-            print 'buffer: ', self.full_data
 
     def connectionLost(self, reason):
-        print 'Finished receiving body:', reason.getErrorMessage()
         if reason.check(ResponseDone):
             self.finished.callback(''.join(self.full_data))
         else:
             self.finished.errback(reason)
+
 
 class MonServBodyReceiver(BodyReceiver):
     def connectionLost(self, reason):
         # Monserv geocoder doesent close connection properly,
         # thus there are no way to say that data is ok
         # except actually trying to parse it.
-        print 'Finished receiving body:', reason.getErrorMessage()
+
         self.finished.callback(''.join(self.full_data))
-
-
-
-
-
 
 
 class GenericGeocodingResult(object):
@@ -103,7 +97,6 @@ class GenericGeocodingResult(object):
     def parse_response(self, data):
         # process self.raw_data
         # must be implemented in subclasses
-        print data
         raise NotImplementedError()
 
     def get_address(self, data):
@@ -111,15 +104,6 @@ class GenericGeocodingResult(object):
         # nice address string from server (or error :))
         # must be implemented in subclasses 
         raise NotImplementedError()
-
-
-
-
-
-
-
-
-
 
 
 class NominatimResponse(GenericGeocodingResult):
@@ -148,16 +132,15 @@ class NominatimResponse(GenericGeocodingResult):
         return [method, url, headers, body]
 
     def cb_process_response(self, response):
-        print 'Response version:', response.version
-        print 'Response code:', response.code
-        print 'Response phrase:', response.phrase
-        print 'Response headers', response.headers
-
         def cb_request_finished(response_data):
-            self.finished.callback(self.parse_response(response_data))
+            """data would be sent to recepient immedeatly
+            so encode it"""
+            resp = self.parse_response(response_data).encode('utf-8')
+            if self.format == 'json':
+                resp = simplejson.dumps({'address': resp})
+            self.finished.callback(resp)
 
         def eb_request_failed(reason):
-            print 'request failed - {}'.format(reason.getErrorMessage())
             raise
 
         d = Deferred()
@@ -185,7 +168,6 @@ class NominatimResponse(GenericGeocodingResult):
             except:
                 raise
             self.address_str = json['display_name']
-            print json
         else:
             raise NotImplementedError('xml parsing from Nominatim not implemented')
         return self.address_str
@@ -283,6 +265,7 @@ def parse_generic(request):
 #                <latlng>50.427390, 30.453530</latlng>
 #            </points>
 #        </findNearbyPlaces>
+
 #    response:
 #    <?xml version="1.0" encoding="utf-8" ?>
 #    <nearbyPlaces>

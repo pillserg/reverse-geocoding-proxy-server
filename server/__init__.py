@@ -7,6 +7,7 @@ import time
 
 from twisted.internet.defer import Deferred as D
 from twisted.internet.defer import CancelledError
+from twisted.python.failure import Failure
 from twisted.web.server import NOT_DONE_YET, Site
 from twisted.web.resource import Resource
 
@@ -138,16 +139,34 @@ class MonServToNominatem(Resource):
 
 class GenericToNominatim(Resource):
     def render_GET(self, request):
-        geocoder_request = GenericGeocodingRequest(request)
-        d = NominatimResponse(geocoder_request).get_agent()
 
-        def cb_data_received_from_geoserver(latlng, request):
-            #print latlng
-            request.write(latlng.encode('utf-8'))
+        def cb_data_received_from_geoserver(response, request):
+            request.setHeader('Content-type', 'application/json; charset=UTF-8')
+            request.write(response)
             request.finish()
 
+        def eb_something_went_wrong(reason, request):
+            request.setResponseCode(500)
+            request.write('<h2>500</h2> Something went wrong')
+            request.finish()
+
+        def finish_request(_, request, start_time):
+            print 'OK: {} s'.format(time.time() - start_time)
+
+        try:
+            geocoder_request = GenericGeocodingRequest(request)
+        except MalformedDataError, err:
+            request.setHeader('Content-type', 'application/json; charset=UTF-8')
+            return '{"failure": "bad params"}'
+
+        req_start_time = time.time()
+        print '{} > {} ...'.format(request.getClientIP(), request.__repr__()),
+
+        d = NominatimResponse(geocoder_request).get_agent()
         d.addCallback(cb_data_received_from_geoserver, request)
         d.addErrback(lambda err: err.trap(CancelledError))
+        d.addErrback(eb_something_went_wrong, request)
+        d.addBoth(finish_request, request, req_start_time)
         request.notifyFinish().addErrback(lambda _, d: d.cancel(), d)
         return NOT_DONE_YET
 
