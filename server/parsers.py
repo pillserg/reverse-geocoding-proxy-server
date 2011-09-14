@@ -9,6 +9,7 @@ import simplejson
 from zope.interface import implements
 from urllib import urlencode
 
+from twisted.internet.defer import succeed, fail
 from twisted.web.client import Agent, ResponseDone
 from twisted.web.http_headers import Headers
 from twisted.web.iweb import IBodyProducer
@@ -21,6 +22,22 @@ from errors import *
 NOMINATIM, MONSERV, GOOGLECODER = range(1, 4)
 SERVERS = (NOMINATIM, MONSERV, GOOGLECODER)
 
+def sentinel(f):
+    def inner_call(*args, **kwargs):
+        print '\n!--- Entering {} -------'.format(f.__name__)
+        print '\t--- args: {}; kwargs: {}'.format(args, kwargs)
+        res = f(*args, **kwargs)
+        print '\t--- Result: {}'.format(res)
+        print '\t--- Exiting {} -------\n'.format(f.__name__)
+        return res
+    return inner_call
+
+
+def conver_Nominatem_response_to_MonServ(data):
+    return data
+
+def simpleErrBack(err):
+    err.printTraceback()
 
 class AlreadyParsedError(Exception):
     pass
@@ -77,11 +94,12 @@ class MonServBodyReceiver(BodyReceiver):
 
 class GenericGeocodingRequest(object):
     """
-    Basic request representation suitable for use with any geoserver
+    Basic georequest representation suitable for use with any geoserver
     """
 
     def __init__(self, request, format='json'):
         self.processed = False
+        self.request = request
         self.lat = None
         self.lon = None
         self.format = format
@@ -111,7 +129,7 @@ class GenericGeocodingRequest(object):
 
 
 class MonitorServerGeocodingRequest(GenericGeocodingRequest):
-    def _parse_request(request):
+    def _parse_request(self, request):
         """
         parses request (assumes xml) to monitorserver geocoder,
         """
@@ -125,7 +143,8 @@ class MonitorServerGeocodingRequest(GenericGeocodingRequest):
                 lat, lon = map(float, latlng.split(', '))
             except Exception, err:
                 raise MalformedDataError(err)
-
+        else:
+            raise MalformedDataError('no data body')
         self.lat = lat
         self.lon = lon
         self.processed = True
@@ -133,27 +152,36 @@ class MonitorServerGeocodingRequest(GenericGeocodingRequest):
 
 
 class GoogleGeocoderRequest(GenericGeocodingRequest):
-    def _parse_request(request):
+    def _parse_request(self, request):
         if self.processed:
             raise AlreadyParsedError('I can be called only once')
         raise NotImplementedError('google parser not implemented')
 
 
 class NominatimGeocoderRequest(GenericGeocodingRequest):
-    def _parse_request(request):
+    def _parse_request(self, request):
         if self.processed:
             raise AlreadyParsedError('I can be called only once')
         raise NotImplementedError('google parser not implemented')
 
 
 class GenericGeocodingResult(object):
-    def __init__(self, geocoding_request, return_raw=False):
+    def __init__(self, geocoding_request, return_raw=False, convertor=None):
+        """
+        > geocoding_request instance of GenericGeocodingRequest subclass
+        > return_raw | Bool # dosent touch resulting ans return it in raw
+        > convertor | explicit function for converting geoserver resp body
+                      must take data as first arg, and original georeq inst
+        
+        """
+        self.convertor = convertor
         self.return_raw = return_raw
-        self.request = geocoding_request
+        self.georequest = geocoding_request
+        self.original_request = self.georequest.request
         self.lat, self.lon = geocoding_request.get_latlon()
         self.address_str = None
         self.format = geocoding_request.get_format()
-        self.raw_data = self.request.get_raw_data()
+        self.raw_data = self.georequest.get_raw_data()
         self.finished = Deferred()
 
     def get_display_address(self):
@@ -179,6 +207,7 @@ class GenericGeocodingResult(object):
         raise NotImplementedError()
 
     def _cb_process_response(self, response):
+
         def cb_request_finished(response_data):
             """data would be sent to recepient immedeatly
             so encode it"""
@@ -191,6 +220,7 @@ class GenericGeocodingResult(object):
             self.finished.callback(resp)
 
         def eb_request_failed(reason):
+            print 'ERR'
             raise
 
         d = Deferred()
@@ -205,11 +235,11 @@ class GenericGeocodingResult(object):
         args = self._make_args_for_agent()
         d = agent.request(*args)
         d.addCallback(self._cb_process_response)
+        d.addErrback(simpleErrBack)
         return self.finished
 
 class NominatimResponse(GenericGeocodingResult):
     base_nominatim_url = 'http://nominatim.openstreetmap.org/reverse'
-
     def _make_url_for_nominatim(self):
         req = '?'.join((self.base_nominatim_url,
                         urlencode({'lat': self.lat,
@@ -232,6 +262,9 @@ class NominatimResponse(GenericGeocodingResult):
         return [method, url, headers, body]
 
     def _parse_response(self, data):
+        if self.convertor:
+            return self.convertor(data, self.georequest)
+
         if self.format == 'json':
             try:
                 json = simplejson.loads(data.decode('utf-8'))
@@ -250,6 +283,15 @@ class MonServerResponse(GenericGeocodingResult):
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
         self.format = 'xml'
+        self._make_body()
+
+    def _make_body(self):
+        xml_body = ('<?xml version="1.0" encoding="utf-8" ?><findNearbyPlaces>'
+                    '<points><latlng>{lat}, {lon}</latlng></points>'
+                    '</findNearbyPlaces>').format(lat=self.lat,
+                                                  lon=self.lon)
+        self.raw_data = xml_body
+        return self.raw_data
 
     def _make_args_for_agent(self):
         """
@@ -257,7 +299,7 @@ class MonServerResponse(GenericGeocodingResult):
         returns list
         server dependent
         """
-        user_agent_mimic = self.request.requestHeaders.getRawHeaders('User-Agent')
+        user_agent_mimic = self.original_request.requestHeaders.getRawHeaders('User-Agent')
         if user_agent_mimic:
             user_agent_mimic = user_agent_mimic[0]
         else:
@@ -266,7 +308,10 @@ class MonServerResponse(GenericGeocodingResult):
         url = self.mon_serv_url
         headers = Headers({'Connection': ['Keep-Alive'],
                            'Proxy-Connection': ['Keep-Alive'],
-                           'User-Agent': [user_agent_mimic]})
+                           'User-Agent': [user_agent_mimic],
+                           'Content-Type': ['text/xml'],
+                           'Content-length': [len(self.raw_data), ]
+                           })
         body = StringProducer(self.raw_data)
         return [method, url, headers, body]
 
@@ -277,10 +322,34 @@ class MonServerResponse(GenericGeocodingResult):
             except:
                 raise
             self.address_str = json['display_name']
-        else:
-            raise NotImplementedError('xml parsing from Nominatim not implemented')
+        elif self.format == 'xml':
+            return data
+            #xml_data = minidom.parseString(data)
+            #xml_data.getElementsByTagName('latlng')[0].firstChild.data
         return self.address_str
 
+    def _cb_process_response(self, response):
+
+        def cb_request_finished(response_data):
+            """data would be sent to recepient immedeatly
+            so encode it"""
+            resp = self._parse_response(response_data)
+            if not self.return_raw:
+                if self.format == 'json':
+                    resp = simplejson.dumps({'address': resp})
+                elif self.format == 'xml':
+                    resp = self._parse_response(resp)
+            self.finished.callback(resp)
+
+        def eb_request_failed(reason):
+            print 'ERR'
+            raise
+
+        d = Deferred()
+        d.addCallback(cb_request_finished)
+        d.addErrback(eb_request_failed)
+        response.deliverBody(BodyReceiver(d))
+        return d
 
 def parse_monitor_server_response(xml_data):
         try:

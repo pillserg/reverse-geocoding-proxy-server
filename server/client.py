@@ -72,7 +72,7 @@ class MonServBodyReceiver(BodyReceiver):
 
 
 def request_inst_to_agent_request_list(request, new_url):
-    data = request.content.read()
+    data = georequest.content.read()
     method = request.method
     url = new_url
     headers = Headers({'Connection': ['Keep-Alive'],
@@ -87,7 +87,7 @@ def request_inst_to_agent_request_list(request, new_url):
 def get_xml_from_monitor_server(request, url='http://62.213.6.99/cgi-bin/geocoder'):
     from twisted.internet import reactor
     agent = Agent(reactor)
-    d = agent.request(*request_inst_to_agent_request_list(request, url))
+    d = agent.georequest(*request_inst_to_agent_request_list(request, url))
 
     def callback_request(response):
         print 'Response version:', response.version
@@ -102,7 +102,7 @@ def get_xml_from_monitor_server(request, url='http://62.213.6.99/cgi-bin/geocode
             request.finish()
 
         def ebRequestFailed(reason, response, request):
-            print 'request failed - {}'.format(reason.getErrorMessage())
+            print 'georequest failed - {}'.format(reason.getErrorMessage())
             request.setResponseCode('500')
             request.write('Data Retrival Failed')
 
@@ -167,7 +167,7 @@ def get_json_from_nominatim(request, url='http://nominatim.openstreetmap.org/rev
         return finished
 
     def errback_request(err, request):
-        print 'request failed - {}'.format(err.getErrorMessage())
+        print 'georequest failed - {}'.format(err.getErrorMessage())
         request.setResponseCode(500)
         request.write('Data Retrival Failed')
 
