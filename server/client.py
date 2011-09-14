@@ -84,7 +84,7 @@ def request_inst_to_agent_request_list(request, new_url):
     return lst
 
 
-def get_xml_from_monitor_server(request, url='http://62.76.178.190/cgi-bin/geocoder'):
+def get_xml_from_monitor_server(request, url='http://62.213.6.99/cgi-bin/geocoder'):
     from twisted.internet import reactor
     agent = Agent(reactor)
     d = agent.request(*request_inst_to_agent_request_list(request, url))

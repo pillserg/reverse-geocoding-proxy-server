@@ -172,7 +172,7 @@ class GenericToNominatim(Resource):
         req_start_time = time.time()
         self.print_request(request)
 
-        d = NominatimResponse(geocoder_request).get_agent()
+        d = NominatimResponse(geocoder_request).get_address()
         d.addCallback(cb_data_received_from_geoserver, request)
         d.addErrback(lambda err: err.trap(CancelledError))
         d.addErrback(eb_something_went_wrong, request)
