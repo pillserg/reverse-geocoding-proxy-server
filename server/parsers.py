@@ -17,6 +17,7 @@ from twisted.internet.defer import Deferred
 from twisted.internet.protocol import Protocol
 
 from errors import *
+import settings
 
 #server's marks
 NOMINATIM, MONSERV, GOOGLECODER = range(1, 4)
@@ -239,7 +240,7 @@ class GenericGeocodingResult(object):
         return self.finished
 
 class NominatimResponse(GenericGeocodingResult):
-    base_nominatim_url = 'http://nominatim.openstreetmap.org/reverse'
+    base_nominatim_url = settings.NOMINATIM_URL
     def _make_url_for_nominatim(self):
         req = '?'.join((self.base_nominatim_url,
                         urlencode({'lat': self.lat,
@@ -278,7 +279,7 @@ class NominatimResponse(GenericGeocodingResult):
 
 class MonServerResponse(GenericGeocodingResult):
 
-    mon_serv_url = 'http://62.213.6.99/cgi-bin/geocoder'
+    mon_serv_url = settings.MON_SERV_URL
 
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)

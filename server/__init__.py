@@ -19,11 +19,12 @@ from parsers import MonServerResponse
 from parsers import MONSERV, NOMINATIM, GOOGLECODER
 from parsers import sentinel
 from errors import *
+import settings
 
-TEMPLATE_DIR = '../templates'
+TEMPLATE_DIR = settings.TEMPLATE_DIR
 ERROR_503_MSG = '<h1>503</h1> something bad happend... contact administration please'
 VERSION = '0.0.1'
-HTTP_PORT = 8888
+HTTP_PORT = settings.PORT
 GEOCODERS_URLS = {'monitorserver': 'http://62.76.178.190/cgi-bin/geocoder',
                   'google': 'http://maps.google.com/maps/geo',
                   'nominatim': ' http://nominatim.openstreetmap.org/reverse'}
