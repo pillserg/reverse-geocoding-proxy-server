@@ -13,7 +13,7 @@ from twisted.web.server import NOT_DONE_YET, Site
 from twisted.web.resource import Resource
 
 from parsers import GenericGeocodingRequest, MonitorServerGeocodingRequest
-from parsers import GenericGeocodingResult
+from parsers import GenericGeocodingResponse
 from parsers import NominatimResponse
 from parsers import MonServerResponse
 from parsers import MONSERV, NOMINATIM, GOOGLECODER

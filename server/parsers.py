@@ -6,6 +6,7 @@ for different geoservers
 from xml.dom import minidom
 import cgi
 import simplejson
+import time
 from zope.interface import implements
 from urllib import urlencode
 
@@ -23,15 +24,7 @@ import settings
 NOMINATIM, MONSERV, GOOGLECODER = range(1, 4)
 SERVERS = (NOMINATIM, MONSERV, GOOGLECODER)
 
-def sentinel(f):
-    def inner_call(*args, **kwargs):
-        print '\n!--- Entering {} -------'.format(f.__name__)
-        print '\t--- args: {}; kwargs: {}'.format(args, kwargs)
-        res = f(*args, **kwargs)
-        print '\t--- Result: {}'.format(res)
-        print '\t--- Exiting {} -------\n'.format(f.__name__)
-        return res
-    return inner_call
+from utils import sentinel
 
 
 def conver_Nominatem_response_to_MonServ(data):
@@ -98,14 +91,32 @@ class GenericGeocodingRequest(object):
     Basic georequest representation suitable for use with any geoserver
     """
 
-    def __init__(self, request, format='json'):
+    def __init__(self, request, format='json', MOCK=False):
+        """
+        request must be original twisted request object
+        or may be dict like:
+        {
+        lat: 50,
+        lon: 29,
+        }
+        in this case MOCK flag must raised. Then parsing will be omitted
+        """
+
         self.processed = False
-        self.request = request
         self.lat = None
         self.lon = None
         self.format = format
-        self.raw_data = request.content.read()
-        self._parse_request(request)
+
+
+        if MOCK:
+            self.request = None
+            self.lat = request.get('lat')
+            self.lon = request.get('lon')
+            self.raw_data = None
+        else:
+            self.request = request
+            self.raw_data = request.content.read()
+            self._parse_request(request)
 
     def get_format(self):
         return self.format
@@ -166,9 +177,15 @@ class NominatimGeocoderRequest(GenericGeocodingRequest):
         raise NotImplementedError('google parser not implemented')
 
 
-class GenericGeocodingResult(object):
+class GenericGeocodingResponse(object):
     def __init__(self, geocoding_request, return_raw=False, convertor=None):
         """
+        
+        instantiate with georequest
+        grab deferred using _.get_address()
+        add nice callback to it.
+        d will be fired with request result or err.
+        
         > geocoding_request instance of GenericGeocodingRequest subclass
         > return_raw | Bool # dosent touch resulting ans return it in raw
         > convertor | explicit function for converting geoserver resp body
@@ -239,8 +256,9 @@ class GenericGeocodingResult(object):
         d.addErrback(simpleErrBack)
         return self.finished
 
-class NominatimResponse(GenericGeocodingResult):
+class NominatimResponse(GenericGeocodingResponse):
     base_nominatim_url = settings.NOMINATIM_URL
+
     def _make_url_for_nominatim(self):
         req = '?'.join((self.base_nominatim_url,
                         urlencode({'lat': self.lat,
@@ -277,7 +295,7 @@ class NominatimResponse(GenericGeocodingResult):
         return self.address_str
 
 
-class MonServerResponse(GenericGeocodingResult):
+class MonServerResponse(GenericGeocodingResponse):
 
     mon_serv_url = settings.MON_SERV_URL
 
@@ -300,11 +318,12 @@ class MonServerResponse(GenericGeocodingResult):
         returns list
         server dependent
         """
-        user_agent_mimic = self.original_request.requestHeaders.getRawHeaders('User-Agent')
-        if user_agent_mimic:
-            user_agent_mimic = user_agent_mimic[0]
-        else:
-            user_agent_mimic = ''
+#        user_agent_mimic = self.original_request.requestHeaders.getRawHeaders('User-Agent')
+#        if user_agent_mimic:
+#            user_agent_mimic = user_agent_mimic[0]
+#        else:
+#            user_agent_mimic = 'Twisted reverse geocoder v0.0.1'
+        user_agent_mimic = 'Twisted reverse geocoder v0.0.1'
         method = 'POST'
         url = self.mon_serv_url
         headers = Headers({'Connection': ['Keep-Alive'],

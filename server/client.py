@@ -16,7 +16,7 @@ from twisted.internet.protocol import Protocol
 #from parsers import parse_request_to_monitorserver
 #from parsers import parse_generic_request
 from parsers import GenericGeocodingRequest
-from parsers import GenericGeocodingResult
+from parsers import GenericGeocodingResponse
 from parsers import NominatimResponse
 from parsers import MONSERV, NOMINATIM, GOOGLECODER
 
